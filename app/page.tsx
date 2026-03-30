@@ -65,13 +65,6 @@ export default function Dashboard() {
     setIsLoading(true);
     setMessage(null);
 
-    const webhookUrl = process.env.NEXT_PUBLIC_N8N_WEBHOOK_URL;
-    if (!webhookUrl) {
-      setMessage({ type: 'error', text: 'Webhook URL이 설정되지 않았습니다.' });
-      setIsLoading(false);
-      return;
-    }
-
     try {
       const body = action === 'publish' 
         ? { action: 'publish', post_id: selectedPost.id }
@@ -83,26 +76,35 @@ export default function Dashboard() {
             feedback 
           };
 
-      const response = await fetch(webhookUrl, {
+      const response = await fetch('/api/webhook', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
 
-      if (!response.ok) throw new Error('Webhook request failed');
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Webhook request failed: ${errorText}`);
+      }
 
       setMessage({ 
         type: 'success', 
-        text: action === 'publish' ? '발행 승인이 완료되었습니다.' : '수정 지시가 전달되었습니다.' 
+        text: action === 'publish' ? '발행 승인이 완료되었습니다. (데이터 처리 중...)' : '수정 지시가 전달되었습니다.' 
       });
 
       setFeedback('');
-      await fetchDrafts();
       
-      setTimeout(() => setMessage(null), 3000);
-    } catch (err) {
+      // Give n8n a small buffer to complete its DB update before refreshing list
+      setTimeout(async () => {
+        await fetchDrafts();
+        setMessage(null);
+      }, 2500);
+    } catch (err: any) {
       console.error(`Error during ${action}:`, err);
-      setMessage({ type: 'error', text: '요청 처리 중 오류가 발생했습니다.' });
+      setMessage({ 
+        type: 'error', 
+        text: `요청 처리 중 오류가 발생했습니다: ${err.message || '알 수 없는 오류'}` 
+      });
     } finally {
       setIsLoading(false);
     }
